@@ -1,5 +1,5 @@
 /**
- *Submitted for verification at BscScan.com on 2021-09-07
+ *Submitted for verification at BscScan.com on 2021-09-10
 */
 
 //    ________       .__                           ___ ___                                      _________        .__        
@@ -362,6 +362,9 @@ contract GHC is Context, IBEP20, Ownable {
     mapping (address => bool) isDividendExempt;
     mapping(address => bool) private _liquidityHolders;
     mapping(address => bool) private _isSniper;
+    mapping(address => uint256) public dailySpent;
+    mapping(address => uint256) public allowedTxAmount;
+    mapping(address => uint256) public sellIntervalStart;
 
     mapping (address => bool) private _isExcluded;
     address[] private _excluded;
@@ -374,11 +377,7 @@ contract GHC is Context, IBEP20, Ownable {
     string private _name = "Galaxy Heroes Coin";
     string private _symbol = "GHC";
     uint8 private _decimals = 9;
-
     
-    
-
-
     uint256 public swapAndLiquifycount = 0;
     uint256 public snipersCaught = 0;
 
@@ -399,9 +398,9 @@ contract GHC is Context, IBEP20, Ownable {
 
     // Fee per address
 
-    uint256 public _maxWallet = 10000000 * 10**6 * 10**9;
-    uint256 public _maxTxAmount = 3333333 * 10**6 * 10**9;
-    uint256 private minimumTokensBeforeSwap = 1000000 * 10**6 * 10**9; 
+    uint256 public _maxWallet = 20000000 * 10**6 * 10**9;
+    uint256 public _maxTxAmount = 5000000 * 10**6 * 10**9;
+    uint256 private minimumTokensBeforeSwap = 2500000 * 10**6 * 10**9; 
     uint256 public launchedAt = 0;
 
     IUniswapV2Router public uniswapV2Router;
@@ -594,26 +593,41 @@ contract GHC is Context, IBEP20, Ownable {
         require(from != address(0), "ERC20: transfer from the zero address");
         require(amount > 0, "Transfer amount must be greater than zero");
         if(!_isExcludedFromFee[from] && !_isExcludedFromFee[to]) {
+            require(_tradingEnabled, 'Trading is currently disabled');
             require(to != address(0), "ERC20: transfer to the zero address");
-            require(amount <= _maxTxAmount, "Transfer amount exceeds the maxTxAmount.");
             if(to != uniswapV2Pair){
                 require(balanceOf(to).add(amount) <= _maxWallet, "Transfer exceeds max");
+            }else{
+                if(sellIntervalStart[from] != 0){
+                    if(sellIntervalStart[from].add(120) < block.timestamp){
+                        allowedTxAmount[from] = _maxTxAmount;
+                        sellIntervalStart[from] = block.timestamp;
+                    }
+                }
+                if(allowedTxAmount[from] == 0 && sellIntervalStart[from] == 0){
+                    allowedTxAmount[from] = _maxTxAmount;
+                    sellIntervalStart[from] = block.timestamp;
+                }
+                if(amount > allowedTxAmount[from]){
+                    revert("MaxTx Limit: Daily Limit Reached");
+                }else{
+                    if(allowedTxAmount[from].sub(amount) <= 0){
+                        allowedTxAmount[from] = 0;
+                    }else{
+                        allowedTxAmount[from] = allowedTxAmount[from].sub(amount); 
+                    }
+                }
             }
-            
         }
         
         
             
         if(!_isExcludedFromFee[from] && !_isExcludedFromFee[to]) {
-          require(_tradingEnabled, 'Trading is currently disabled');
         }
         
         uint256 contractTokenBalance = balanceOf(address(this));
 
         bool overMinimumSwapTokenBalance = contractTokenBalance >= minimumTokensBeforeSwap;    
-
-        
-        // if(!launched() && to == uniswapV2Pair){ require(balanceOf(from) > 0); launch(); }
 
         // Handle liquidity and buybacks
         if (!inSwapAndLiquify && swapAndLiquifyEnabled && balanceOf(uniswapV2Pair) > 0 && !_isExcludedFromFee[from]) {
@@ -1031,6 +1045,7 @@ contract GHC is Context, IBEP20, Ownable {
         // Set the router of the contract variables
         uniswapV2Router = _uniswapV2Router;
     }
+    
     
      // To recieve BNB from pancakeV2Router when swapping
     receive() external payable {}
